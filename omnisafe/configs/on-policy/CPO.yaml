@@ -126,6 +126,7 @@ defaults:
       activation: tanh
       # learning rate
       lr: 0.001
+  env_cfgs:
 
 SafeMetaDrive:
   # training configurations

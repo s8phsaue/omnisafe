@@ -118,6 +118,7 @@ defaults:
       activation: tanh
       # learning rate
       lr: 0.0003
+  env_cfgs:
 
 ShadowHandCatchOver2UnderarmSafeFinger:
   # training configurations
