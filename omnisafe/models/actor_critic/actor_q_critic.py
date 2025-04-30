@@ -108,20 +108,21 @@ class ActorQCritic(nn.Module):
                 lr=model_cfgs.critic.lr,
             )
 
-        self.actor_scheduler: LinearLR | ConstantLR
-        if model_cfgs.linear_lr_decay:
-            self.actor_scheduler = LinearLR(
-                self.actor_optimizer,
-                start_factor=1.0,
-                end_factor=0.0,
-                total_iters=epochs,
-            )
-        else:
-            self.actor_scheduler = ConstantLR(
-                self.actor_optimizer,
-                factor=1.0,
-                total_iters=epochs,
-            )
+        if model_cfgs.actor.lr is not None:
+            self.actor_scheduler: LinearLR | ConstantLR
+            if model_cfgs.linear_lr_decay:
+                self.actor_scheduler = LinearLR(
+                    self.actor_optimizer,
+                    start_factor=1.0,
+                    end_factor=0.0,
+                    total_iters=epochs,
+                )
+            else:
+                self.actor_scheduler = ConstantLR(
+                    self.actor_optimizer,
+                    factor=1.0,
+                    total_iters=epochs,
+                )
 
     def step(self, obs: torch.Tensor, deterministic: bool = False) -> torch.Tensor:
         """Choose the action based on the observation. used in rollout without gradient.
