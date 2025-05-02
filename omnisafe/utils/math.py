@@ -64,7 +64,7 @@ def discount_cumsum(vector_x: torch.Tensor, discount: float) -> torch.Tensor:
         >>> vector_x
         tensor([1, 2, 3, 4])
         >>> discount_cumsum(vector_x, 0.9)
-        tensor([8.15, 5.23, 2.80, 1.00])
+        tensor([8.15, 7.94, 6.60, 4.00])
 
     Args:
         vector_x (torch.Tensor): A sequence of shape (B, T).
