@@ -102,13 +102,14 @@ class VectorOnPolicyBuffer(OnPolicyBuffer):
         self,
         last_value_r: torch.Tensor | None = None,
         last_value_c: torch.Tensor | None = None,
+        final_obs: torch.Tensor | None = None,
         idx: int = 0,
     ) -> None:
         """Get the data in the buffer.
 
         In vector-on-policy buffer, we get the data from each buffer and then concatenate them.
         """
-        self.buffers[idx].finish_path(last_value_r, last_value_c)
+        self.buffers[idx].finish_path(last_value_r, last_value_c, final_obs=final_obs)
 
     def get(self) -> dict[str, torch.Tensor]:
         """Get the data in the buffer.

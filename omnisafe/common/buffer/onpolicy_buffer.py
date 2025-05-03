@@ -109,6 +109,11 @@ class OnPolicyBuffer(BaseBuffer):  # pylint: disable=too-many-instance-attribute
         self.data['target_value_c'] = torch.zeros((size,), dtype=torch.float32, device=device)
         self.data['logp'] = torch.zeros((size,), dtype=torch.float32, device=device)
 
+        self.data_final: dict[str, list] = {
+            'final_obs': [],    # final observation
+            'final_idx': [],    # idx of last observation in obs buffer, i.e. final_obs would be placed at final_idx
+        }
+
         self._gamma: float = gamma
         self._lam: float = lam
         self._lam_c: float = lam_c
@@ -149,6 +154,7 @@ class OnPolicyBuffer(BaseBuffer):  # pylint: disable=too-many-instance-attribute
         self,
         last_value_r: torch.Tensor | None = None,
         last_value_c: torch.Tensor | None = None,
+        final_obs: torch.Tensor | None = None,
     ) -> None:
         """Finish the current path and calculate the advantages of state-action pairs.
 
@@ -166,6 +172,8 @@ class OnPolicyBuffer(BaseBuffer):  # pylint: disable=too-many-instance-attribute
                 Defaults to torch.zeros(1).
             last_value_c (torch.Tensor, optional): The value of the last state of the current path.
                 Defaults to torch.zeros(1).
+            final_obs (torch.Tensor, optional): The final observation of the current path.
+                Defaults to None.
         """
         if last_value_r is None:
             last_value_r = torch.zeros(1, device=self._device)
@@ -201,6 +209,24 @@ class OnPolicyBuffer(BaseBuffer):  # pylint: disable=too-many-instance-attribute
         self.data['target_value_c'][path_slice] = target_value_c
 
         self.path_start_idx = self.ptr
+
+        if final_obs is not None:
+            self.data_final['final_obs'].append(final_obs)
+            self.data_final['final_idx'].append(self.ptr)
+    
+    def get_final_data(self) -> dict[str, torch.Tensor]:
+        """Get the final data in the buffer.
+
+        Returns:
+            The final data stored in the data_final buffer.
+        """
+        data = {
+            'final_obs': torch.stack(self.data_final['final_obs']).to(dtype=torch.float32, device=self._device),
+            'final_idx': torch.tensor(self.data_final['final_idx'], dtype=torch.int32, device=self._device),
+        }
+        for v in self.data_final.values():
+            v.clear()
+        return data
 
     def get(self) -> dict[str, torch.Tensor]:
         """Get the data in the buffer.

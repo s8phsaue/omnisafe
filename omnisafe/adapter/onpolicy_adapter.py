@@ -96,6 +96,7 @@ class OnPolicyAdapter(OnlineAdapter):
                 act=act,
                 reward=reward,
                 cost=cost,
+                done=torch.logical_and(terminated, torch.logical_xor(terminated, truncated)),
                 value_r=value_r,
                 value_c=value_c,
                 logp=logp,
@@ -111,6 +112,7 @@ class OnPolicyAdapter(OnlineAdapter):
                             in {self._env.num_envs - num_dones} of {self._env.num_envs} environments.',
                     )
 
+            final_obs = obs
             for idx, (done, time_out) in enumerate(zip(terminated, truncated)):
                 if epoch_end or done or time_out:
                     last_value_r = torch.zeros(1)
@@ -132,8 +134,11 @@ class OnPolicyAdapter(OnlineAdapter):
                         self._ep_ret[idx] = 0.0
                         self._ep_cost[idx] = 0.0
                         self._ep_len[idx] = 0.0
+                    
+                    if done or time_out:
+                        final_obs[idx] = info['final_observation'][idx]
 
-                    buffer.finish_path(last_value_r, last_value_c, idx)
+                    buffer.finish_path(last_value_r, last_value_c, final_obs=final_obs[idx], idx=idx)
 
     def _log_value(
         self,
