@@ -16,9 +16,11 @@
 
 from omnisafe.algorithms.on_policy.second_order.cpo import CPO
 from omnisafe.algorithms.on_policy.second_order.pcpo import PCPO
+from omnisafe.algorithms.on_policy.second_order.csc import CSC
 
 
 __all__ = [
     'CPO',
     'PCPO',
+    'CSC',
 ]
