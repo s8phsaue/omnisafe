@@ -96,7 +96,6 @@ class OnPolicyAdapter(OnlineAdapter):
                 act=act,
                 reward=reward,
                 cost=cost,
-                done=torch.logical_and(terminated, torch.logical_xor(terminated, truncated)),
                 value_r=value_r,
                 value_c=value_c,
                 logp=logp,
