@@ -81,7 +81,7 @@ defaults:
     # Subsampled observation
     fvp_obs: None
     # Tolerance of constraint violation
-    cost_limit: 0.05
+    cost_limit: 0.0005
     # The sub-sampling rate of the observation
     fvp_sample_freq: 1
     # Search steps for line search
@@ -141,7 +141,7 @@ defaults:
   # lagrangian configurations
   lagrange_cfgs:
     # Tolerance of constraint violation
-    cost_limit: 0.05
+    cost_limit: 0.0005
     # Initial value of lagrangian multiplier
     lagrangian_multiplier_init: 0.001
     # Learning rate of lagrangian multiplier
