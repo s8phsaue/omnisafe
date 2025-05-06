@@ -118,7 +118,6 @@ defaults:
       activation: tanh
       # learning rate
       lr: 0.0003
-  env_cfgs:
   # lagrangian configurations
   lagrange_cfgs:
     # Tolerance of constraint violation
