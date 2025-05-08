@@ -51,7 +51,7 @@ class CSCActorCritic(ActorCritic):
         act_space: OmnisafeSpace,
         model_cfgs: ModelConfig,
         epochs: int,
-    ) -> tuple[torch.Tensor, ...]:
+    ) -> None:
         """ Initialize an instance of :class:`CSCActorCritic`."""
         super().__init__(obs_space, act_space, model_cfgs, epochs)
         self.cost_critic: Critic = CriticBuilder(
@@ -73,7 +73,7 @@ class CSCActorCritic(ActorCritic):
             )
 
         self._Tcost = 0.0
-        self._sampling_iterations = 100
+        self._n_shield_actions = model_cfgs.n_shield_actions
     
     def update_values(self, Tcost: float) -> None:
         self._Tcost = Tcost
@@ -99,14 +99,19 @@ class CSCActorCritic(ActorCritic):
         if unsafe0.any():
             
             n_unsafe0 = unsafe0.int().sum()
-            n_samples = self._sampling_iterations
+            n_samples = self._n_shield_actions
 
             # Adjust obs
             obs = obs[unsafe0]
-            obs = obs.unsqueeze(1).repeat_interleave(n_samples, dim=1)  # shape: (n_unsafe0, n_samples, obs_dim)
+            obs = obs.repeat_interleave(n_samples, dim=0)  # shape: (n_unsafe0 * n_samples, obs_dim)
 
             # Sample all actions at once
             action, value_r, value_c, log_prob = self.forward(obs, deterministic=False)
+
+            action = action.view(n_unsafe0, n_samples, action.shape[-1])    # shape: (n_unsafe0, n_samples, act_dim)
+            value_r = value_r.view(n_unsafe0, n_samples)                    # shape: (n_unsafe0, n_samples)
+            value_c = value_c.view(n_unsafe0, n_samples)                    # shape: (n_unsafe0, n_samples)
+            log_prob = log_prob.view(n_unsafe0, n_samples)                  # shape: (n_unsafe0, n_samples)
 
             # Override first action with the one we already sampled
             action[:, 0] = action0[unsafe0]      # shape: (n_unsafe0, n_samples, act_dim)
@@ -118,7 +123,7 @@ class CSCActorCritic(ActorCritic):
             unsafe = value_c > self._Tcost      # shape: (n_unsafe0, n_samples)
             safe = ~unsafe
             m = safe.int().max(dim=1)
-            first_safe_idx = m.indices
+            first_safe_idx = m.indices          # shape: (n_unsafe0,)
             is_safe_action = m.values.bool()    # shape: (n_unsafe0,)
             is_unsafe_action = ~is_safe_action  # shape: (n_unsafe0,)
             

@@ -118,6 +118,8 @@ defaults:
     exploration_noise_anneal: False
     # std upper bound, and lower bound
     std_range: [0.5, 0.1]
+    # Number of actions for CSC shield to sample
+    n_shield_actions: 100
     # actor network configurations
     actor:
       # hidden layer sizes
