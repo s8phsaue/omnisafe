@@ -253,6 +253,27 @@ class CSC(TRPO):
     def _update_reward_critic(self, obs: torch.Tensor, target_value_r: torch.Tensor) -> None:
         return super()._update_reward_critic(obs, target_value_r)
 
+    def _get_actions_and_values(
+        self,
+        actor_obs: torch.Tensor,
+        critic_obs: torch.Tensor,
+        num_actions: int,
+        actions: torch.Tensor = None,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        # Sample actions
+        if actions is None:
+            temp_obs = actor_obs.repeat_interleave(num_actions, dim=0)
+            actions, _, _, logp = self._actor_critic.forward(temp_obs)
+            logp = logp.view(actor_obs.shape[0], num_actions, 1)
+        else:
+            logp = None     # random actions logp gets calculated in _update
+        
+        # Estimate q value
+        temp_obs = critic_obs.repeat_interleave(num_actions, dim=0)
+        q = self._actor_critic.cost_critic(temp_obs, actions)[0]
+        q = q.view(critic_obs.shape[0], num_actions, 1)
+        return actions, q, logp
+
     def _update_cost_critic_cql(
         self, 
         obs: torch.Tensor, 
@@ -274,9 +295,6 @@ class CSC(TRPO):
         action_size = self._env.action_space.shape[-1]
         num_actions = self._cfgs.algo_cfgs.cql_n_actions
         
-        temp_obs = obs.unsqueeze(1).repeat(1, num_actions, 1)
-        temp_next_obs = next_obs.unsqueeze(1).repeat(1, num_actions, 1)
-        
         cql_temp = self._cfgs.algo_cfgs.cql_temp
         cql_min_q_weight = self._cfgs.algo_cfgs.cql_min_q_weight
 
@@ -290,14 +308,17 @@ class CSC(TRPO):
 
         # Add CQL
         random_actions = torch.empty(
-            batch_size, num_actions, action_size, dtype=torch.float32, device=self._device
+            batch_size * num_actions, action_size, dtype=torch.float32, device=self._device
         ).uniform_(-1, 1)
-        curr_actions, _, _, logp_curr = self._actor_critic.forward(temp_obs)
-        next_actions, _, _, logp_next = self._actor_critic.forward(temp_next_obs)
-
-        q_rand = self._actor_critic.cost_critic(temp_obs, random_actions)[0]
-        q_curr = self._actor_critic.cost_critic(temp_obs, curr_actions)[0]
-        q_next = self._actor_critic.cost_critic(temp_obs, next_actions)[0]
+        random_actions, q_rand, _ = self._get_actions_and_values(
+            actor_obs=obs, critic_obs=obs, num_actions=num_actions, actions=random_actions
+        )
+        _, q_curr, logp_curr = self._get_actions_and_values(
+            actor_obs=obs, critic_obs=obs, num_actions=num_actions, actions=None
+        )
+        _, q_next, logp_next = self._get_actions_and_values(
+            actor_obs=next_obs, critic_obs=obs, num_actions=num_actions, actions=None
+        )
 
         random_density = np.log(0.5 ** action_size)
         cat_q = torch.cat(
