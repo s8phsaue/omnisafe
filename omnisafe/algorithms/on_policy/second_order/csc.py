@@ -338,7 +338,7 @@ class CSC(TRPO):
         cl = self._lagrange.cost_limit
 
         with torch.no_grad():
-            grad = 1 / (1 - gamma) * adv_c.mean().cpu() - (cl - Jc)
+            grad = -(1 / (1 - gamma) * adv_c.mean().item() - (cl - Jc))
             self._lagrange.lagrangian_multiplier.data -= self._lagrange.lambda_lr * grad
             self._lagrange.lagrangian_multiplier.data.clamp_(
                 0.0,
