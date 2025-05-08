@@ -91,7 +91,7 @@ defaults:
     # CQL temperature
     cql_temp: 1.0
     # CQL min q weight
-    cql_min_q_weight: 0.5
+    cql_min_q_weight: 1.0
   # logger configurations
   logger_cfgs:
     # use wandb for logging

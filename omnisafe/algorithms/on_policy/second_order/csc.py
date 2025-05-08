@@ -121,32 +121,32 @@ class CSC(TRPO):
         """
         final_kl = 0.0
         for step in range(total_steps):
+            step_frac = step_frac * (1 - step_frac)**(step)
             theta_new = theta_old + step_frac * step_direction
             set_param_values_to_model(self._actor_critic.actor, theta_new)
             acceptance_step = step + 1
 
             with torch.no_grad():
                 q_dist = self._actor_critic.actor(obs)
-                kl = torch.distributions.kl.kl_divergence(p_dist, q_dist).mean() # or .sum(-1, keepdim=True).mean()?
+                kl = torch.distributions.kl.kl_divergence(p_dist, q_dist).mean()
                 kl = distributed.dist_avg(kl).mean()
 
             if not torch.isfinite(kl):
                 self._logger.log('WARNING: KL not finite')
                 continue
             elif kl > self._cfgs.algo_cfgs.target_kl:
-                self._logger.log(f'INFO: violated KL constraint {kl.item()} at step {acceptance_step}.')
+                self._logger.log(f'INFO: violated KL constraint at step {acceptance_step}.')
             else:
                 # step only if we are within the trust region
                 self._logger.log(f'Accept step at i={acceptance_step}')
                 final_kl = kl.item()
                 break
-
-            step_frac *= (1 - step_frac)**(acceptance_step)
         
         else:
             # if we didn't find a step that satisfies the kl constraint
             self._logger.log('INFO: no suitable step found...')
             step_direction = torch.zeros_like(step_direction)
+            step_frac = 0.0
             acceptance_step = 0
         
         set_param_values_to_model(self._actor_critic.actor, theta_old)
@@ -219,8 +219,8 @@ class CSC(TRPO):
         assert torch.isfinite(x).all(), 'x is not finite'
         xHx = torch.dot(x, self._fvp(x))
         assert xHx.item() >= 0, 'xHx is negative'
-        beta = torch.sqrt(2 * self._cfgs.algo_cfgs.target_kl / (xHx + 1e-8))
-        step_direction = beta * x
+        alpha = torch.sqrt(2 * self._cfgs.algo_cfgs.target_kl / (xHx + 1e-8))
+        step_direction = alpha * x
         assert torch.isfinite(step_direction).all(), 'step_direction is not finite'
 
         step_direction, accept_step = self._csc_search_step(
@@ -242,7 +242,7 @@ class CSC(TRPO):
             {
                 'Loss/Loss_pi': loss.item(),
                 'Misc/AcceptanceStep': accept_step,
-                'Misc/Alpha': beta.item(),  # called beta in the csc paper
+                'Misc/Alpha': alpha.item(),
                 'Misc/FinalStepNorm': torch.norm(step_direction).mean().item(),
                 'Misc/gradient_norm': torch.norm(grads).mean().item(),
                 'Misc/xHx': xHx.item(),
@@ -446,14 +446,14 @@ class CSC(TRPO):
 
         for _ in range(self._cfgs.algo_cfgs.update_iters):
             for (
-                obs,
-                act,
-                next_obs,
-                target_value_r,
-                target_value_c,
+                d_obs,
+                d_act,
+                d_next_obs,
+                d_target_value_r,
+                d_target_value_c,
             ) in dataloader:
-                self._update_reward_critic(obs, target_value_r)
-                self._update_cost_critic_cql(obs, act, next_obs, target_value_c)
+                self._update_reward_critic(d_obs, d_target_value_r)
+                self._update_cost_critic_cql(d_obs, d_act, d_next_obs, d_target_value_c)
 
         # Update lagrange multiplier last
         self._update_lagrange_multiplier(Jc, adv_c)
