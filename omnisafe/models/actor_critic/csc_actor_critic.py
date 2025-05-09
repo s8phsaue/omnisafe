@@ -65,11 +65,11 @@ class CSCActorCritic(ActorCritic):
         ).build_critic('q')
         self.add_module('cost_critic', self.cost_critic)
 
-        if model_cfgs.critic.lr is not None:
+        if model_cfgs.critic.cost_lr is not None:
             self.cost_critic_optimizer: optim.Optimizer
             self.cost_critic_optimizer = optim.Adam(
                 self.cost_critic.parameters(),
-                lr=model_cfgs.critic.lr,
+                lr=model_cfgs.critic.cost_lr,
             )
 
         self._Tcost = 0.0
