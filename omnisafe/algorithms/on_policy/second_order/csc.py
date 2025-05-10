@@ -33,6 +33,30 @@ from omnisafe.utils.tools import (
     set_param_values_to_model,
 )
 
+class CSCLagrange(Lagrange):
+    def update_lagrange_multiplier(self, gamma: float, adv_c: torch.Tensor, Jc: float) -> None:
+        """
+        Update Lagrange multiplier (lambda) with a custom loss following the CSC paper.
+
+        Args:
+            gamma (float): discount factor.
+            adv_c (torch.Tensor): cost advantage.
+            Jc (float): mean episode cost.
+        """
+        self.lambda_optimizer.zero_grad()
+
+        ratio = 1 / (1 - gamma)
+        chi = self.cost_limit - Jc
+        lambda_loss = -self.lagrangian_multiplier * (ratio * adv_c.mean() - chi)
+        
+        lambda_loss.backward()
+        self.lambda_optimizer.step()
+        self.lagrangian_multiplier.data.clamp_(
+            0.0,
+            self.lagrangian_upper_bound,
+        )  # enforce: lambda in [0, inf]
+    
+
 @registry.register
 class CSC(TRPO):
     """The Conservative Safety Critics (CSC) algorithm.
@@ -53,7 +77,7 @@ class CSC(TRPO):
         """
         super()._init()
         self._check_algo_cfgs()
-        self._lagrange: Lagrange = Lagrange(**self._cfgs.lagrange_cfgs)
+        self._lagrange = CSCLagrange(**self._cfgs.lagrange_cfgs)
 
     def _init_log(self) -> None:
         """Log the Conservative Safety Critics specific information.
@@ -209,6 +233,7 @@ class CSC(TRPO):
         self._actor_critic.actor.zero_grad()
         adv = self._compute_adv_surrogate(adv_r, adv_c)
         loss = self._loss_pi(obs, act, logp, adv)
+        loss = distributed.dist_avg(loss)
         p_dist = self._actor_critic.actor(obs)
 
         loss.backward()
@@ -346,34 +371,10 @@ class CSC(TRPO):
                 self._cfgs.algo_cfgs.max_grad_norm,
             )
         distributed.avg_grads(self._actor_critic.cost_critic)
-
         self._actor_critic.cost_critic_optimizer.step()
 
         self._logger.store({'Loss/Loss_cost_critic': loss.mean().item()})
         
-    
-    # TODO maybe use a custom Lagrange class with custom loss instead
-    def _update_lagrange_multiplier(self, Jc: float, adv_c: torch.Tensor) -> None:
-        """ Update lagrange multiplier with a custom update that considers cost advantages.
-        
-        Args:
-            Jc (float): The mean episode cost.
-            adv_c (torch.Tensor): The cost advantage.
-
-        """
-        gamma = self._cfgs.algo_cfgs.cost_gamma
-        cl = self._lagrange.cost_limit
-
-        with torch.no_grad():
-            grad = -(1 / (1 - gamma) * adv_c.mean().item() - (cl - Jc))
-            self._lagrange.lagrangian_multiplier.data -= self._lagrange.lambda_lr * grad
-            self._lagrange.lagrangian_multiplier.data.clamp_(
-                0.0,
-                self._lagrange.lagrangian_upper_bound,
-            )
-        
-        self._logger.store({'Metrics/LagrangeMultiplier': self._lagrange.lagrangian_multiplier})
-    
     def _get_update_data(self):
         # Retrieve default on-policy data
         data:dict = self._buf.get()
@@ -462,11 +463,16 @@ class CSC(TRPO):
                 self._update_cost_critic_cql(d_obs, d_act, d_next_obs, d_target_value_c)
 
         # Update lagrange multiplier last
-        self._update_lagrange_multiplier(Jc, adv_c)
+        self._lagrange.update_lagrange_multiplier(
+            gamma=self._cfgs.algo_cfgs.cost_gamma,
+            adv_c=adv_c,
+            Jc=Jc,
+        )
 
         # Store metrics
         self._logger.store(
             {
+                'Metrics/LagrangeMultiplier': self._lagrange.lagrangian_multiplier,
                 'Train/StopIter': self._cfgs.algo_cfgs.update_iters,
                 'Value/Adv': adv_r.mean().item(),
                 'Value/Adv_Cost': adv_c.mean().item(),
