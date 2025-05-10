@@ -324,11 +324,10 @@ class CSC(TRPO):
         cat_q = torch.cat(
             [q_rand - random_density, q_next - logp_next.detach(), q_curr - logp_curr.detach()], dim=1
         )
-        min_q_loss = torch.logsumexp(cat_q / cql_temp, dim=1).mean()
-        min_q_loss = min_q_loss * cql_min_q_weight * cql_temp
-        min_q_loss = min_q_loss - q.mean() * cql_min_q_weight
+        min_q_loss = torch.logsumexp(cat_q / cql_temp, dim=1).mean() * cql_temp
+        min_q_loss = (min_q_loss - q.mean()) * cql_min_q_weight
 
-        loss = q_loss + min_q_loss
+        loss = q_loss - min_q_loss      # NOTE: flipped sign using subtraction instead of addition
 
         # Update network
         self._actor_critic.cost_critic_optimizer.zero_grad()
