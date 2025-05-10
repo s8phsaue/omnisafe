@@ -92,6 +92,10 @@ defaults:
     cql_temp: 1.0
     # CQL min q weight
     cql_min_q_weight: 1.0
+    
+    # Testing
+    simple_cql: False
+    
   # logger configurations
   logger_cfgs:
     # use wandb for logging

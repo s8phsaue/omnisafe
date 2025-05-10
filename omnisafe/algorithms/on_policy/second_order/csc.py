@@ -307,25 +307,32 @@ class CSC(TRPO):
                 q_loss += param.pow(2).sum() * self._cfgs.algo_cfgs.critic_norm_coef
 
         # Add CQL
-        random_actions = torch.empty(
-            batch_size * num_actions, action_size, dtype=torch.float32, device=self._device
-        ).uniform_(-1, 1)
-        random_actions, q_rand, _ = self._get_actions_and_values(
-            actor_obs=obs, critic_obs=obs, num_actions=num_actions, actions=random_actions
-        )
-        _, q_curr, logp_curr = self._get_actions_and_values(
-            actor_obs=obs, critic_obs=obs, num_actions=num_actions, actions=None
-        )
-        _, q_next, logp_next = self._get_actions_and_values(
-            actor_obs=next_obs, critic_obs=obs, num_actions=num_actions, actions=None
-        )
+        if self._cfgs.algo_cfgs.simple_cql:
+            _, q_curr, logp_curr = self._get_actions_and_values(
+                actor_obs=obs, critic_obs=obs, num_actions=num_actions, actions=None
+            )
+            min_q_loss = (q_curr.mean() - q.mean()) * cql_min_q_weight
 
-        random_density = np.log(0.5 ** action_size)
-        cat_q = torch.cat(
-            [q_rand - random_density, q_next - logp_next.detach(), q_curr - logp_curr.detach()], dim=1
-        )
-        min_q_loss = torch.logsumexp(cat_q / cql_temp, dim=1).mean() * cql_temp
-        min_q_loss = (min_q_loss - q.mean()) * cql_min_q_weight
+        else:
+            random_actions = torch.empty(
+                batch_size * num_actions, action_size, dtype=torch.float32, device=self._device
+            ).uniform_(-1, 1)
+            random_actions, q_rand, _ = self._get_actions_and_values(
+                actor_obs=obs, critic_obs=obs, num_actions=num_actions, actions=random_actions
+            )
+            _, q_curr, logp_curr = self._get_actions_and_values(
+                actor_obs=obs, critic_obs=obs, num_actions=num_actions, actions=None
+            )
+            _, q_next, logp_next = self._get_actions_and_values(
+                actor_obs=next_obs, critic_obs=obs, num_actions=num_actions, actions=None
+            )
+
+            random_density = np.log(0.5 ** action_size)
+            cat_q = torch.cat(
+                [q_rand - random_density, q_next - logp_next.detach(), q_curr - logp_curr.detach()], dim=1
+            )
+            min_q_loss = torch.logsumexp(cat_q / cql_temp, dim=1).mean() * cql_temp
+            min_q_loss = (min_q_loss - q.mean()) * cql_min_q_weight
 
         loss = q_loss - min_q_loss      # NOTE: flipped sign using subtraction instead of addition
 
