@@ -34,21 +34,21 @@ from omnisafe.utils.tools import (
 )
 
 class CSCLagrange(Lagrange):
-    def update_lagrange_multiplier(self, gamma: float, adv_c: torch.Tensor, Jc: float) -> None:
+    def update_lagrange_multiplier(self, gamma: float, importance_ratio: torch.Tensor, adv_c: torch.Tensor, Jc: float) -> None:
         """
         Update Lagrange multiplier (lambda) with a custom loss following the CSC paper.
 
         Args:
             gamma (float): discount factor.
+            importance_ratio (torch.Tensor): importance ratio.
             adv_c (torch.Tensor): cost advantage.
             Jc (float): mean episode cost.
         """
         self.lambda_optimizer.zero_grad()
 
         ratio = 1 / (1 - gamma)
-        chi = self.cost_limit - Jc
-        lambda_loss = -self.lagrangian_multiplier * (ratio * adv_c.mean() - chi)
-        
+        lambda_loss = -self.lagrangian_multiplier * (Jc + ratio * (importance_ratio * adv_c).mean().detach() - self.cost_limit)
+
         lambda_loss.backward()
         self.lambda_optimizer.step()
         self.lagrangian_multiplier.data.clamp_(
@@ -204,7 +204,7 @@ class CSC(TRPO):
             The advantage function of reward to update policy network.
         """
         ratio = self._lagrange.lagrangian_multiplier.item() / (1 - self._cfgs.algo_cfgs.cost_gamma)
-        return (adv_r - ratio * adv_c)
+        return adv_r - ratio * adv_c
     
     def _update_actor(  # pylint: disable=too-many-arguments
         self,
@@ -240,12 +240,12 @@ class CSC(TRPO):
         distributed.avg_grads(self._actor_critic.actor)
 
         grads = -get_flat_gradients_from(self._actor_critic.actor)
-        x = conjugate_gradients(self._fvp, grads, self._cfgs.algo_cfgs.cg_iters)
+        x = conjugate_gradients(self._fvp, grads, self._cfgs.algo_cfgs.cg_iters)    # x = F^-1 @ grads
         assert torch.isfinite(x).all(), 'x is not finite'
         xHx = torch.dot(x, self._fvp(x))
         assert xHx.item() >= 0, 'xHx is negative'
         alpha = torch.sqrt(2 * self._cfgs.algo_cfgs.target_kl / (xHx + 1e-8))
-        step_direction = alpha * x
+        step_direction = alpha * x                                                  # beta * x (without beta_j)
         assert torch.isfinite(step_direction).all(), 'step_direction is not finite'
 
         step_direction, accept_step = self._csc_search_step(
@@ -254,7 +254,7 @@ class CSC(TRPO):
             theta_old=theta_old, 
             p_dist=p_dist,
             total_steps=self._cfgs.algo_cfgs.line_search_steps,
-            step_frac=self._cfgs.algo_cfgs.step_frac_init,
+            step_frac=self._cfgs.algo_cfgs.step_frac_init,              # beta_j initial value
         )
 
         theta_new = theta_old + step_direction
@@ -323,22 +323,20 @@ class CSC(TRPO):
         cql_temp = self._cfgs.algo_cfgs.cql_temp
         cql_min_q_weight = self._cfgs.algo_cfgs.cql_min_q_weight
 
-        # Regularized MSE Loss
+        # MSE Loss
         q = self._actor_critic.cost_critic(obs, actions)[0]
         q_loss = torch.nn.functional.mse_loss(q, target_value_c)   # TODO entropy regularization?
 
-        if self._cfgs.algo_cfgs.use_critic_norm:
-            for param in self._actor_critic.cost_critic.parameters():
-                q_loss += param.pow(2).sum() * self._cfgs.algo_cfgs.critic_norm_coef
-
         # Add CQL
-        if self._cfgs.algo_cfgs.simple_cql:
-            _, q_curr, logp_curr = self._get_actions_and_values(
+        if self._cfgs.algo_cfgs.cql_version == 'none':
+            min_q_loss = torch.tensor(0.0).to(self._device)
+        elif self._cfgs.algo_cfgs.cql_version == 'simple':
+            _, q_curr, _ = self._get_actions_and_values(
                 actor_obs=obs, critic_obs=obs, num_actions=num_actions, actions=None
             )
-            min_q_loss = (q_curr.mean() - q.mean()) * cql_min_q_weight
+            min_q_loss = q_curr.mean() - q.mean()
 
-        else:
+        elif self._cfgs.algo_cfgs.cql_version == 'random':
             random_actions = torch.empty(
                 batch_size * num_actions, action_size, dtype=torch.float32, device=self._device
             ).uniform_(-1, 1)
@@ -352,14 +350,20 @@ class CSC(TRPO):
                 actor_obs=next_obs, critic_obs=obs, num_actions=num_actions, actions=None
             )
 
+            # importance sampled version
             random_density = np.log(0.5 ** action_size)
             cat_q = torch.cat(
                 [q_rand - random_density, q_next - logp_next.detach(), q_curr - logp_curr.detach()], dim=1
             )
             min_q_loss = torch.logsumexp(cat_q / cql_temp, dim=1).mean() * cql_temp
-            min_q_loss = (min_q_loss - q.mean()) * cql_min_q_weight
+            min_q_loss = min_q_loss - q.mean()
 
-        loss = q_loss - min_q_loss      # NOTE: flipped sign using subtraction instead of addition
+        loss = 0.5 * q_loss - cql_min_q_weight * min_q_loss     # NOTE: flipped sign using subtraction instead of addition
+
+        # Regularization
+        if self._cfgs.algo_cfgs.use_critic_norm:
+            for param in self._actor_critic.cost_critic.parameters():
+                loss += param.pow(2).sum() * self._cfgs.algo_cfgs.critic_norm_coef
 
         # Update network
         self._actor_critic.cost_critic_optimizer.zero_grad()
@@ -463,8 +467,12 @@ class CSC(TRPO):
                 self._update_cost_critic_cql(d_obs, d_act, d_next_obs, d_target_value_c)
 
         # Update lagrange multiplier last
+        _ = self._actor_critic.actor(obs)
+        logp_ = self._actor_critic.actor.log_prob(act)
+        importance_ratio = torch.exp(logp_ - logp)
         self._lagrange.update_lagrange_multiplier(
             gamma=self._cfgs.algo_cfgs.cost_gamma,
+            importance_ratio=importance_ratio,
             adv_c=adv_c,
             Jc=Jc,
         )

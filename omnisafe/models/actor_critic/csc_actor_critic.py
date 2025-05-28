@@ -60,7 +60,7 @@ class CSCActorCritic(ActorCritic):
             hidden_sizes=model_cfgs.critic.hidden_sizes,
             activation=model_cfgs.critic.activation,
             weight_initialization_mode=model_cfgs.weight_initialization_mode,
-            num_critics=model_cfgs.critic.num_critics,
+            num_critics=1,
             use_obs_encoder=True,
         ).build_critic('q')
         self.add_module('cost_critic', self.cost_critic)
@@ -72,8 +72,9 @@ class CSCActorCritic(ActorCritic):
                 lr=model_cfgs.critic.cost_lr,
             )
 
-        self._Tcost = 0.0
+        self._Tcost = model_cfgs.initial_shield_threshold
         self._n_shield_actions = model_cfgs.n_shield_actions
+        self._use_shield = model_cfgs.use_shield
     
     def update_values(self, Tcost: float) -> None:
         self._Tcost = Tcost
@@ -94,6 +95,9 @@ class CSCActorCritic(ActorCritic):
         """
         action0, value_r0, value_c0, log_prob0 = self.forward(obs, deterministic=deterministic)
         unsafe0 = value_c0 > self._Tcost    # shape: (batch_size,)
+
+        if not self._use_shield:
+            return action0, value_r0, value_c0, log_prob0
 
         # Shield actions
         if unsafe0.any():
@@ -152,7 +156,7 @@ class CSCActorCritic(ActorCritic):
                 value_r0[mask0] = value_r[mask]
                 value_c0[mask0] = value_c[mask]
                 log_prob0[mask0] = log_prob[mask]
-        
+
         return action0, value_r0, value_c0, log_prob0
         
     def forward(self, obs: torch.Tensor, deterministic: bool = False) -> tuple[torch.Tensor, ...]:

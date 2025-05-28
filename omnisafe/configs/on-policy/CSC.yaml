@@ -91,10 +91,10 @@ defaults:
     # CQL temperature
     cql_temp: 1.0
     # CQL min q weight
-    cql_min_q_weight: 1.0
+    cql_min_q_weight: 0.5
     
     # Testing
-    simple_cql: False
+    cql_version: random
     
   # logger configurations
   logger_cfgs:
@@ -124,6 +124,10 @@ defaults:
     std_range: [0.5, 0.1]
     # Number of actions for CSC shield to sample
     n_shield_actions: 100
+    # toggle shielding
+    use_shield: True
+    # initial shield threshold
+    initial_shield_threshold: 0.0
     # actor network configurations
     actor:
       # hidden layer sizes
