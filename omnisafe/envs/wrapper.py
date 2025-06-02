@@ -276,6 +276,38 @@ class ObsNormalize(Wrapper):
         saved['obs_normalizer'] = self._obs_normalizer
         return saved
 
+class RewardCostCombine(Wrapper):
+    """
+    Used when combining reward and cost into a single value. 
+    Restores the original, uncombined reward inside the info dictionary.
+    """
+    def step(
+        self,
+        action: torch.Tensor,
+    ) -> tuple[
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        dict[str, Any],
+    ]:
+        obs, reward, cost, terminated, truncated, info = super().step(action)
+
+        if not 'original_reward' in info:
+            info['original_reward'] = torch.zeros_like(reward)
+
+        if self._env.num_envs == 1:
+            info['original_reward'][...] = info['rc_original_reward']
+        else:
+            done = terminated.bool() | truncated.bool()
+            done_idx = done.nonzero(as_tuple=True)[0]
+
+            info['original_reward'][...] = torch.from_numpy(info['rc_original_reward'])
+            for i in done_idx:
+                info['original_reward'][i] = info['final_info'][i]['rc_original_reward']
+                
+        return obs, reward, cost, terminated, truncated, info
 
 class RewardNormalize(Wrapper):
     """Normalize the reward.
