@@ -160,6 +160,7 @@ class CSC(TRPO):
                 continue
             elif kl > self._cfgs.algo_cfgs.target_kl:
                 self._logger.log(f'INFO: violated KL constraint at step {acceptance_step}.')
+                continue
             else:
                 # step only if we are within the trust region
                 self._logger.log(f'Accept step at i={acceptance_step}')
@@ -201,7 +202,7 @@ class CSC(TRPO):
             adv_c (torch.Tensor): The ``cost_advantage`` sampled from buffer.
 
         Returns:
-            The advantage function of reward to update policy network.
+            The advantage function to update the policy network.
         """
         ratio = self._lagrange.lagrangian_multiplier.item() / (1 - self._cfgs.algo_cfgs.cost_gamma)
         return adv_r - ratio * adv_c
@@ -271,7 +272,7 @@ class CSC(TRPO):
                 'Misc/FinalStepNorm': torch.norm(step_direction).mean().item(),
                 'Misc/gradient_norm': torch.norm(grads).mean().item(),
                 'Misc/xHx': xHx.item(),
-                'Misc/H_inv_g': x.norm().item(),
+                'Misc/H_inv_g': torch.norm(x).item(),
             }
         )
 

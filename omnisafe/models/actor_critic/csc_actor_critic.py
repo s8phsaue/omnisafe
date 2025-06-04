@@ -135,6 +135,7 @@ class CSCActorCritic(ActorCritic):
             if is_safe_action.any():
                 mask0 = torch.zeros_like(unsafe0)   # shape: (batch_size,)
                 mask0[unsafe0] = is_safe_action
+
                 mask = torch.zeros_like(unsafe)     # shape: (n_unsafe0, n_samples)
                 mask[torch.arange(n_unsafe0), first_safe_idx] = is_safe_action
 
@@ -150,7 +151,7 @@ class CSCActorCritic(ActorCritic):
 
                 m = value_c[is_unsafe_action, :].min(dim=1)
                 mask = torch.zeros_like(unsafe)     # shape: (n_unsafe0, n_samples)
-                mask[is_unsafe_action.nonzero().flatten(), m.indices] = True
+                mask[is_unsafe_action.nonzero(as_tuple=True)[0], m.indices] = True
 
                 action0[mask0] = action[mask]
                 value_r0[mask0] = value_r[mask]
