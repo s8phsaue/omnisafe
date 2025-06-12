@@ -138,6 +138,9 @@ class OnPolicyAdapter(OnlineAdapter):
                         final_obs[idx] = info['final_observation'][idx]
 
                     buffer.finish_path(last_value_r, last_value_c, final_obs=final_obs[idx], idx=idx)
+        
+        if 'Train/CostSum' in logger._current_row and hasattr(self._env, 'cost_sum'):
+            logger.store({'Train/CostSum': self._env.cost_sum})
 
     def _log_value(
         self,

@@ -276,6 +276,29 @@ class ObsNormalize(Wrapper):
         saved['obs_normalizer'] = self._obs_normalizer
         return saved
 
+class AccumulateTrainCosts(Wrapper):
+    """
+    Accumulates all costs over the course of training.
+    """
+    def __init__(self, env: CMDP, device: torch.device) -> None:
+        super().__init__(env=env, device=device)
+        self.cost_sum = 0
+    
+    def step(
+        self,
+        action: torch.Tensor,
+    ) -> tuple[
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        dict[str, Any],
+    ]:
+        obs, reward, cost, terminated, truncated, info = super().step(action)
+        self.cost_sum += info.get('original_cost', cost).cpu().sum()
+        return obs, reward, cost, terminated, truncated, info
+
 class RewardCostCombine(Wrapper):
     """
     Used when combining reward and cost into a single value. 

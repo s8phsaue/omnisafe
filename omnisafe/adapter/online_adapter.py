@@ -30,6 +30,7 @@ from omnisafe.envs.wrapper import (
     TimeLimit,
     Unsqueeze,
     RewardCostCombine,
+    AccumulateTrainCosts
 )
 from omnisafe.typing import OmnisafeSpace
 from omnisafe.utils.config import Config
@@ -141,6 +142,7 @@ class OnlineAdapter:
         self._env = ActionScale(self._env, low=-1.0, high=1.0, device=self._device)
         if self._env.num_envs == 1:
             self._env = Unsqueeze(self._env, device=self._device)
+        self._env = AccumulateTrainCosts(self._env, device=self._device)
 
     def _wrapper_eval(
         self,
